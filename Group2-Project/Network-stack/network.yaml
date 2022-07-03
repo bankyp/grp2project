@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ---
+Parameters:
+  EnvironmentName:
+    Description: Select an environment to create Resources
+    Type: String
+    Default: Dev-Environment
+    AllowedValues:
+      - Dev-Environment
+      - Test-Environment
+      - PreProd-Environment
+      - Prod-Environment
+
+  kvpc:
+    Description: K-VPC with CIDR block of 14.0.0.0/16
+    Type: String
+    Default: 14.0.0.0/16
+
+  kpubsubnet1:
+    Description: k-public subnet 1 in AZ1
+    Type: String
+    Default: 14.0.1.0/20
+
+  kpubsubnet2:
+    Description: k-public subnet 2 in AZ2
+    Type: String
+    Default: 14.0.16.0/20
+
+  kprivatesubnet1:
+    Description: k-private subnet 1 in say AZ1
+    Type: String
+    Default: 14.0.32.0/20
+
+  kprivatesubnet2:
+    Description: k-private subnet 2 in say AZ1
+    Type: String
+    Default: 14.0.48.0/20
+
+  kprivatesubnet3:
+    Description: j-private subnet 1 in say AZ2
+    Type: String
+    Default: 14.0.64.0/20
+
+  kprivatesubnet4:
+    Description: j-private subnet 2 in say AZ2
+    Type: String
+    Default: 14.0.80.0/20
+
+  AllowedSSHCidrRangeParam:
+    Description: The IP address range that can be used to ssh to the EC2Instance
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  SecurityGroupPorts:
+    Description: Simple Description of a Number Parameter, with MinValue and MaxValue
+    Type: Number
+    AllowedValues: 
+      - 80
+      - 443
+      - 22 
+
+Resources: 
+# Create a VPC, 2 Public Subnets and 4 Private Subnets
+  SiteVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref kvpc
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+      Tags:
+        - Key: Name
+          Value: Site-VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kpubsubnet1
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-PublicSubnet1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kpubsubnet2
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-PublicSubnet2
+
+  PriavteSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kprivatesubnet1
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-Private-Subnet-1
+
+  PriavteSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kprivatesubnet2
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-Private-Subnet-2
+
+  PriavteSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kprivatesubnet3
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-Private-Subnet-3
+
+  PriavteSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SiteVPC
+      CidrBlock: !Ref kprivatesubnet4
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs:
+              !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${EnvironmentName}-K-Private-Subnet-4
+
+  SecurityGrp:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for VPC and SSH
+      GroupName: Site-VPC-SG
+      VpcId: !Ref SiteVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref SecurityGroupPorts
+          ToPort: !Ref SecurityGroupPorts
+          CidrIp: !Ref AllowedSSHCidrRangeParam
+      Tags:
+        - Key: Name
+          Value: New-Security-Grp-CFN
+
+# Create an Internet Gateway, Attach the IGW to the VPC,Create Public Route table, routes and association
+  KIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: 
+            Fn::Sub: ${kvpc}-IGW
+  
+  AttachKIGW:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref KIGW
+      VpcId: !Ref SiteVPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SiteVPC
+      Tags:
+        - Key: Name
+          Value: Public-Route-Table-Grp2
+  
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref KIGW
+
+  PublicSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+# Private Route Table, Route, Routetable association.
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SiteVPC
+      Tags:
+        - Key: Name
+          Value: Private-Route-Table-Grp2
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref SiteNAT1
+
+  PrivateSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PriavteSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PriavteSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SiteVPC
+      Tags:
+        - Key: Name
+          Value: Private-Route-Table2-Grp2
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref SiteNAT2
+
+  PrivateSubnetAssociation3:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PriavteSubnet3
+      RouteTableId: !Ref PrivateRouteTable2
+
+  PrivateSubnetAssociation4:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PriavteSubnet4
+      RouteTableId: !Ref PrivateRouteTable2
+
+# NAT Gateway and Elastic IP for the NAT
+  SiteNAT1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - EIPSite1
+          - AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Site-Public-Subnet1-NAT
+  
+  EIPSite1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: !Ref SiteVPC
+
+  SiteNAT2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - EIPSite2
+          - AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: Site-Public-Subnet2-NAT
+  
+  EIPSite2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: !Ref SiteVPC
+
+  BastionHost1:
+    Type: AWS::EC2::Instance
+    Properties:
+    AvailabilityZone:
+      Fn::Select: 
+          - 0
+          - Fn::GetAZs:
+              !Ref AWS::Region
+  
+Outputs:
+  SiteVpcOutputName:
+    Description: Name of VPC
+    Value: !Ref SiteVPC
+
+  VpcId: 
+    Description: ID output for VPC
+    Value:
+      Fn::GetAtt:
+        - SiteVPC
+        - VpcId
+    Export:
+      Name: SiteVpcOutput
+
+  SecurityGrpOutputName: 
+    Description: Name of EC2 Instance Security Group
+    Value: !Ref SecurityGrp
+
+  SecurityGroupId:
+    Description: ID output of Transact-VPC Security Group
+    Value: !GetAtt
+        - SecurityGrp
+        - GroupId
+    Export:
+      Name: Server-Security-GroupId
+
